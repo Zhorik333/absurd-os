@@ -40,7 +40,15 @@ import {
   getStatus,
   makeReport,
   discoverSecret,
-} from "./engine.js";
+  addConversation, runExperiment, systemPulse, V2_ACHIEVEMENTS,
+} from "./world.js";
+import Anomaly from './Anomaly.jsx';
+import BorisLab from './BorisLab.jsx';
+import {localReply, buildContext, MOODS} from './boris.js';
+import {EXPERIMENTS} from './experiments.js';
+import {requestBoris} from './ai-client.js';
+import {playSound, SOUND_CHANNELS, SOUND_LABELS} from './audio.js';
+import './v2.css';
 import { usePwa } from "./pwa.js";
 import "./style.css";
 import "./event-effects.css";
@@ -77,36 +85,6 @@ const achievementLabels = [
   "Полное уничтожение реальности",
   "Обнаружение всех секретов",
 ];
-let audio;
-function playSound(type, enabled) {
-  if (!enabled) return;
-  try {
-    audio ??= new (window.AudioContext || window.webkitAudioContext)();
-    audio.resume().catch(() => {});
-    const notes =
-      type === "end"
-        ? [440, 330, 220, 110]
-        : type === "alarm"
-          ? [660, 440, 660]
-          : [220, 440, 660];
-    notes.forEach((f, i) => {
-      const o = audio.createOscillator(),
-        g = audio.createGain(),
-        t = audio.currentTime + i * 0.09;
-      o.type = type === "end" ? "sawtooth" : "sine";
-      o.frequency.setValueAtTime(f, t);
-      g.gain.setValueAtTime(0.0001, t);
-      g.gain.exponentialRampToValueAtTime(0.065, t + 0.01);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.15);
-      o.connect(g);
-      g.connect(audio.destination);
-      o.start(t);
-      o.stop(t + 0.17);
-    });
-  } catch {
-    /* Audio is optional on unsupported browsers. */
-  }
-}
 function Modal({ title, children, onClose, dismissible = true }) {
   const ref = useRef();
   useEffect(() => {
@@ -139,90 +117,6 @@ function Modal({ title, children, onClose, dismissible = true }) {
     </dialog>
   );
 }
-function Anomaly({ chaos, effects }) {
-  return (
-    <div className={`anomaly ${effects ? "active" : ""}`} aria-hidden="true">
-      <div className="orbit-label l1">
-        ОБЪЕКТ № 0{Math.floor(chaos / 10) + 1}
-      </div>
-      <div className="orbit-label l2">НЕ КОРМИТЬ ПОСЛЕ ВЕЧНОСТИ</div>
-      <svg viewBox="0 0 500 360">
-        <defs>
-          <radialGradient id="glow">
-            <stop stopColor="#aaff72" stopOpacity=".19" />
-            <stop offset="1" stopColor="#aaff72" stopOpacity="0" />
-          </radialGradient>
-          <linearGradient id="eye">
-            <stop stopColor="#d1ff99" />
-            <stop offset="1" stopColor="#8cef45" />
-          </linearGradient>
-        </defs>
-        <circle cx="250" cy="180" r="170" fill="url(#glow)" />
-        <g className="outer-ring" fill="none" stroke="#344535">
-          <circle
-            cx="250"
-            cy="180"
-            r="139"
-            strokeDasharray="1 10"
-            strokeWidth="5"
-          />
-          <ellipse
-            cx="250"
-            cy="180"
-            rx="193"
-            ry="65"
-            transform="rotate(-27 250 180)"
-          />
-          <ellipse
-            cx="250"
-            cy="180"
-            rx="185"
-            ry="74"
-            transform="rotate(31 250 180)"
-          />
-        </g>
-        <g className="inner-ring" fill="none" stroke="#82bc56">
-          <circle cx="250" cy="180" r="111" strokeDasharray="72 12 4 12" />
-          <path d="M78 180h38m268 0h38M250 23v30m0 254v30" />
-          <circle cx="94" cy="180" r="4" fill="#b6fa77" />
-          <circle cx="406" cy="180" r="4" fill="#b6fa77" />
-        </g>
-        <g className="eye">
-          <path
-            d="M157 180 Q250 75 343 180 Q250 285 157 180Z"
-            fill="url(#eye)"
-          />
-          <circle cx="250" cy="180" r="43" fill="#11180d" />
-          <circle cx="250" cy="180" r="26" fill="#aafa70" />
-          <ellipse cx="250" cy="180" rx="9" ry="24" fill="#11180d" />
-          <circle cx="261" cy="168" r="6" fill="#f7ffe9" />
-          <path
-            d="M206 111l-9-19m53 6V77m43 34l9-19"
-            stroke="#b6fa77"
-            strokeWidth="4"
-          />
-        </g>
-        <g fill="#aad786" fontSize="9" fontFamily="monospace">
-          <text x="26" y="80">
-            X: ∞.004
-          </text>
-          <text x="380" y="290">
-            Y: НЕ ВАЖНО
-          </text>
-          <text x="24" y="300">
-            [ ЖИВОЕ? ]
-          </text>
-          <text x="387" y="60">
-            REC ●
-          </text>
-        </g>
-      </svg>
-      <div className="anomaly-caption">
-        <span className="live-dot" /> АНОМАЛИЯ СТАБИЛЬНА. ПОКА ЧТО.
-      </div>
-    </div>
-  );
-}
 function App() {
   const [state, setState] = useState(() => {
     try {
@@ -240,14 +134,43 @@ function App() {
   const [lastEvent, setLastEvent] = useState(null);
   const [report, setReport] = useState("");
   const [visibleCount, setVisibleCount] = useState(12);
+  const [route, setRoute] = useState(window.location.hash);
+  const [busy, setBusy] = useState(false);
+  const [borisMode, setBorisMode] = useState('local');
+  const [borisNotice, setBorisNotice] = useState('');
+  const [experiment, setExperiment] = useState(null);
+  const [experimentResult, setExperimentResult] = useState(null);
+  const [detail, setDetail] = useState(null);
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  const pendingAI = useRef(null);
+  const sending = useRef(false);
   const pwa = usePwa();
   const logoClicks = useRef(0);
   const timers = useRef([]);
   const known = useRef({
     a: state.achievements.length,
     s: state.secrets.length,
+    v: state.v2Achievements.length,
   });
   const effects = state.settings.effects;
+  const laboratory = route === '#boris';
+  useEffect(() => {
+    const navigate = () => setRoute(window.location.hash);
+    window.addEventListener('hashchange', navigate);
+    return () => { window.removeEventListener('hashchange', navigate); pendingAI.current?.abort(); };
+  }, []);
+  useEffect(() => {
+    pendingAI.current?.abort();
+    setBorisMode('local');
+  }, [state.settings.ai, state.settings.endpoint]);
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (document.visibilityState !== 'visible' || sending.current) return;
+      setState(s => systemPulse(s, Date.now()));
+    }, 30000);
+    return () => clearInterval(timer);
+  }, []);
   const reduced = useRef(
     window.matchMedia("(prefers-reduced-motion: reduce)").matches,
   );
@@ -277,8 +200,9 @@ function App() {
     state.achievements.slice(known.current.a).forEach(name => toast("Достижение: " + name));
     if (state.secrets.length > known.current.s)
       toast("Секрет раскрыт. Уровень допуска повышен.");
-    known.current = { a: state.achievements.length, s: state.secrets.length };
-  }, [state.achievements, state.secrets]);
+    state.v2Achievements.slice(known.current.v).forEach(id => toast('Достижение V2: ' + V2_ACHIEVEMENTS.find(a => a.id === id)?.name));
+    known.current = { a: state.achievements.length, s: state.secrets.length, v: state.v2Achievements.length };
+  }, [state.achievements, state.secrets, state.v2Achievements]);
   const trigger = (type) => {
     if (complete) return;
     const pool = events[type];
@@ -293,14 +217,63 @@ function App() {
         : state.chaos <= 60 && state.chaos + event.delta >= 61
           ? "alarm"
           : "event",
-      state.settings.sound,
+      state.settings,
     );
     if (type === "gravity") {
       setFloating(true);
       timers.current.push(setTimeout(() => setFloating(false), 5500));
     }
   };
+  const sendBoris = async (raw) => {
+    const message = typeof raw === 'string' ? raw.trim().slice(0,500) : '';
+    if (!message || sending.current || stateRef.current.chaos === 100) return;
+    sending.current = true; setBusy(true); setBorisNotice('');
+    const controller = new AbortController(); pendingAI.current = controller;
+    const snapshot = stateRef.current;
+    let response, mode = 'local';
+    try {
+      if (snapshot.settings.ai && navigator.onLine) {
+        try {
+          response = await requestBoris(message, buildContext(snapshot), {endpoint:snapshot.settings.endpoint, signal:controller.signal});
+          mode = 'ai';
+        } catch (error) {
+          if (controller.signal.aborted) return;
+          setBorisNotice(error.code === 'RATE_LIMIT' ? 'Лимит AI исчерпан. Отвечает автономный Борис.' : 'AI недоступен или не настроен. Отвечает автономный Борис.');
+        }
+      } else if (snapshot.settings.ai) setBorisNotice('Нет сети. Отвечает автономный Борис.');
+      if (controller.signal.aborted) return;
+      setState(current => {
+        if (current.chaos === 100) return current;
+        const answer = response || localReply(message, buildContext(current), current.boris.usedLines);
+        return addConversation(current, message, {...answer,mood:current.chaos >= 81 ? 'panic' : answer.mood ?? current.boris.mood}, Date.now(), mode);
+      });
+      setBorisMode(mode);
+      playSound('boris', stateRef.current.settings);
+    } finally {
+      if (pendingAI.current === controller) pendingAI.current = null;
+      sending.current = false; setBusy(false);
+    }
+  };
+  const proposeExperiment = (id) => {
+    if (complete || busy) return;
+    const selected = EXPERIMENTS.find(e => e.id === id) || EXPERIMENTS[0];
+    setExperiment(selected); setModal('experiment');
+  };
+  const confirmExperiment = () => {
+    if (!experiment || complete) return;
+    const previousIds = new Set(stateRef.current.history.map(event => event.id));
+    const next = runExperiment(stateRef.current, {kind:'experiment',id:experiment.id}, true);
+    const result = next.history.find(event => !previousIds.has(event.id) && event.origin === 'experiment');
+    stateRef.current = next; setState(next); setModal(null);
+    setExperimentResult(result ?? null);
+    if (!result) return;
+    setLastEvent({...result,key:crypto.randomUUID()});
+    playSound('experiment',next.settings);
+    playSound(next.chaos === 100 ? 'end' : result.outcome === 'success' ? 'success' : 'error',next.settings);
+  };
   const reboot = () => {
+    pendingAI.current?.abort();
+    setModal(null); setExperimentResult(null);
     setState((s) => restartUniverse(s));
     setLastEvent(null);
     setFloating(false);
@@ -322,7 +295,7 @@ function App() {
     }
   };
   const filtered = state.history.filter(
-    (e) => filter === "all" || e.type === filter,
+    (e) => filter === "all" || e.type === filter || e.origin === filter || (filter === "rare" && e.outcome === "rare"),
   );
   const sanity = Math.min(
     100,
@@ -359,7 +332,7 @@ function App() {
           </span>
         </button>
         <nav aria-label="Разделы">
-          <a href="#controls" className="nav-active">
+          <a href="#controls" className={!laboratory ? "nav-active" : ""}>
             Пульт
           </a>
           <a href="#archive">
@@ -367,6 +340,7 @@ function App() {
             <span>{state.history.length.toString().padStart(2, "0")}</span>
           </a>
           <button onClick={() => setModal("achievements")}>Достижения</button>
+          <a href="#boris" className={laboratory ? 'nav-active' : ''}>Борис</a>
         </nav>
         <div className="header-tools">
           <span className="connection">
@@ -412,6 +386,13 @@ function App() {
             </button>
           </div>
         )}
+        {laboratory && <>
+          <BorisLab state={state} onSend={sendBoris} onExperiment={proposeExperiment} busy={busy} mode={borisMode} notice={borisNotice} effects={effects} />
+          {experimentResult && <div data-testid="experiment-result" className={`experiment-outcome event-result anim-${experimentResult.animation}`}>
+            <span className="event-emoji">{experimentResult.emoji}</span><div><small>РЕЗУЛЬТАТ ЭКСПЕРИМЕНТА</small><h3>{experimentResult.title}</h3><p>{experimentResult.description}</p></div><strong>{experimentResult.delta > 0 ? '+' : ''}{experimentResult.delta}%</strong>
+          </div>}
+        </>}
+        <div hidden={laboratory}>
         <section className="intro">
           <div>
             <div className="eyebrow">DEPARTMENT OF UNNECESSARY EMERGENCIES</div>
@@ -437,6 +418,7 @@ function App() {
             </div>
           </div>
         </section>
+        <a href="#boris" className="boris-status-strip"><span className="live-dot" /> БОРИС / {MOODS.find(m=>m.id===state.boris.mood)?.label} <span>{state.boris.chat.filter(m=>m.role==='boris').at(-1)?.text || 'Лаборатория открыта. Ответственность — нет.'}</span><ArrowUpRight size={16}/></a>
         <section className="dashboard" aria-label="Состояние вселенной">
           <div className="telemetry panel">
             <div className="panel-head">
@@ -619,7 +601,7 @@ function App() {
             <button
               onClick={() => {
                 toast("Консоль утверждает: это не баг. Это философия.");
-                playSound("event", state.settings.sound);
+                playSound("event", state.settings);
               }}
             >
               Проверить смысл
@@ -648,6 +630,9 @@ function App() {
                 ["chaos", "Катастрофы"],
                 ["oracle", "Оракул"],
                 ["alien", "Контакты"],
+                ["experiment", "Эксперименты"],
+                ["system", "Системные"],
+                ["rare", "Редкие"],
               ].map(([key, text]) => (
                 <button
                   key={key}
@@ -672,6 +657,7 @@ function App() {
                 }}
               >
                 <option value="all">Все типы</option>
+                <option value="experiment">Эксперименты</option><option value="system">Системные</option><option value="rare">Редкие события</option>
                 {Object.entries(TYPES).map(([key, value]) => (
                   <option key={key} value={key}>
                     {value}
@@ -706,10 +692,12 @@ function App() {
                   <span className="archive-emoji">{e.emoji}</span>
                   <div className="archive-body">
                     <span className={"type-tag " + e.type}>
-                      {TYPES[e.type] || "АНОМАЛИЯ"}
+                      {e.origin === 'experiment' ? 'ЭКСПЕРИМЕНТ' : e.origin === 'system' ? 'СИСТЕМНЫЙ СБОЙ' : TYPES[e.type] || "АНОМАЛИЯ"}
                     </span>
                     <h3>{e.title}</h3>
                     <p>{e.description}</p>
+                    {e.origin && <small className={`risk-label risk-${e.risk}`}>РИСК: {e.risk === 'high' ? 'ВЫСОКИЙ' : e.risk === 'medium' ? 'СРЕДНИЙ' : 'НИЗКИЙ'}{e.outcome === 'rare' ? ' / РЕДКОЕ СОБЫТИЕ' : ''}</small>}
+                    <button className="text-button event-detail" aria-label="Полное описание события" onClick={() => {setDetail(e);setModal('detail');}}>Открыть дело ↗</button>
                   </div>
                   <span className="archive-delta">
                     {e.delta > 0 ? "+" : ""}
@@ -742,10 +730,11 @@ function App() {
             Отчёт директору <ArrowUpRight size={18} />
           </button>
         </section>
+        </div>
       </main>
       <footer>
         <span>
-          <Activity size={14} /> АБСУРД OS™ <b>v1.0.0</b>
+          <Activity size={14} /> АБСУРД OS™ <b>v2.0.0 / БОРИС ПРОБУДИЛСЯ</b>
         </span>
         <p>СОЗДАНО ПО ОШИБКЕ. РАБОТАЕТ ПО НЕДОРАЗУМЕНИЮ.</p>
         <button onClick={() => setModal("about")}>
@@ -780,6 +769,7 @@ function App() {
               Последний атом подал заявление по собственному желанию. Директор
               просит зайти. Директора больше нет.
             </p>
+            <p className="boris-intervention">БОРИС: Я сохранил ваши воспоминания. Саму реальность — не успел. Давайте начнём с пространства, а время догоним.</p>
             <p className="muted">
               Архив, достижения и секретные допуски переживут Большой
               перезапуск.
@@ -804,7 +794,7 @@ function App() {
               onChange={(e) => {
                 const sound = e.target.checked;
                 setState((s) => ({ ...s, settings: { ...s.settings, sound } }));
-                playSound("event", sound);
+                playSound("event", {...state.settings, sound});
               }}
             />
           </div>
@@ -827,6 +817,13 @@ function App() {
                 }))
               }
             />
+          </div>
+          <div className="setting-row"><label htmlFor="sound-volume">Громкость</label><input id="sound-volume" aria-label="Громкость" type="range" min="0" max="1" step="0.05" value={state.settings.volume} onChange={e=>setState(s=>({...s,settings:{...s.settings,volume:Number(e.target.value)}}))}/></div>
+          <fieldset className="channel-settings"><legend>Звуковые каналы</legend>{SOUND_CHANNELS.map(channel=><label key={channel}><span>{SOUND_LABELS[channel]}</span><input type="checkbox" aria-label={'Звуковой канал: '+SOUND_LABELS[channel]} checked={state.settings.channels[channel]} onChange={e=>{const checked=e.target.checked;setState(s=>({...s,settings:{...s.settings,channels:{...s.settings.channels,[channel]:checked}}}));}}/></label>)}</fieldset>
+          <div className="ai-settings"><h3>Борис / необязательный AI-сервер</h3><p>По умолчанию Борис работает локально. При включении AI ваше сообщение и краткий контекст вселенной передаются указанному серверу и его AI-провайдеру. Не отправляйте личные данные. API-ключ здесь не нужен.</p>
+            <label className="setting-row">Использовать AI-сервер<input type="checkbox" checked={state.settings.ai} onChange={e=>{const ai=e.target.checked;setState(s=>({...s,settings:{...s.settings,ai}}));}}/></label>
+            <label className="endpoint-label">Адрес AI-сервера<input type="url" maxLength={240} placeholder="https://your-worker.workers.dev/" value={state.settings.endpoint} onChange={e=>{const endpoint=e.target.value;setState(s=>({...s,settings:{...s.settings,endpoint}}));}}/></label>
+            <small>Нет сервера или сети? Автономный Борис продолжит работу. Настройка сама по себе не означает подключения AI.</small>
           </div>
           <div className="install-card">
             <Download />
@@ -879,8 +876,13 @@ function App() {
               );
             })}
           </div>
+          <h3 className="v2-achievement-title">Дела лаборатории / V2</h3>
+          <p className="muted">Открыто {state.v2Achievements.length} из {V2_ACHIEVEMENTS.length}.</p>
+          <div className="achievement-grid">{V2_ACHIEVEMENTS.map(a=>{const earned=state.v2Achievements.includes(a.id);return <div key={a.id} className={earned?'earned':''}><Trophy/><div><small>{earned?'ПОЛУЧЕНО':a.hidden?'СЕКРЕТНО':'НЕ ОТКРЫТО'}</small><h3>{a.hidden&&!earned?'Неизвестное достижение':a.name}</h3><p>{a.hidden&&!earned?'Условия засекречены.':a.description}</p></div>{earned&&<Check size={16}/>}</div>})}</div>
         </Modal>
       )}
+      {!complete && modal === 'experiment' && experiment && <Modal title="Подтвердить эксперимент" onClose={()=>setModal(null)}><div className="experiment-confirm"><h3>{experiment.emoji} {experiment.title}</h3><p>{experiment.description}</p><p>Успех: {Math.round(experiment.probability*100)}%. Риск: {experiment.risk === 'high' ? 'высокий' : experiment.risk === 'medium' ? 'средний' : 'низкий'}.</p><p>{experiment.consequences}</p><p className="muted">Редкий побочный эффект: альтернативный Борис (3,5%). Последствия сохранятся в архиве.</p><div className="modal-actions"><button className="primary-button" onClick={confirmExperiment}>Да, запускаем</button><button onClick={()=>setModal(null)}>Отменить</button></div></div></Modal>}
+      {!complete && modal === 'detail' && detail && <Modal title="Полное дело события" onClose={()=>setModal(null)}><small>{detail.origin === 'experiment' ? 'ЭКСПЕРИМЕНТ' : detail.origin === 'system' ? 'СИСТЕМНЫЙ СБОЙ' : TYPES[detail.type]}</small><h3>{detail.emoji} {detail.title}</h3><p>{detail.description}</p><p>Изменение хаоса: {detail.delta > 0 ? '+' : ''}{detail.delta}%. {detail.outcome === 'rare' ? 'РЕДКОЕ СОБЫТИЕ.' : ''}</p><time>{new Date(detail.time).toLocaleString('ru-RU')}</time></Modal>}
       {!complete && modal === "report" && (
         <Modal title="Отчёт директору" onClose={() => setModal(null)}>
           <textarea
@@ -940,8 +942,9 @@ function App() {
             пострадал. Все совпадения с вашей работой подозрительно закономерны.
           </p>
           <p>
-            Данные хранятся только в вашем браузере. Никакой аналитики,
-            аккаунтов, платных API или передачи прогресса на сервер. Очистка
+            Прогресс хранится в вашем браузере. Аналитики и аккаунтов нет.
+            В автономном режиме данные никуда не передаются. Только если вы явно включите AI,
+            сообщение и краткий контекст отправляются выбранному серверу и его провайдеру; возможны расходы владельца сервера. Очистка
             данных сайта удаляет прогресс. Установка на главный экран может
             создать отдельное хранилище в зависимости от браузера.
           </p>

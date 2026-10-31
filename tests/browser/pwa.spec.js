@@ -60,6 +60,18 @@ test("production PWA: manifest, полный precache, офлайн reload и и
     .getByRole("button", { name: "Оракул", exact: true })
     .click();
   await expect(page.getByTestId("archive-entry")).toHaveCount(2);
+  await page.getByRole('link',{name:'Борис',exact:true}).click();
+  await page.getByLabel('Сообщение Борису',{exact:true}).fill('Что с гравитацией без интернета?');
+  await page.getByRole('button',{name:'Отправить сообщение'}).click();
+  await expect(page.locator('[data-role=boris]')).toHaveCount(1);
+  await page.reload();
+  await expect(page.locator('[data-role=boris]')).toHaveCount(1);
+  await expect(page.getByTestId('boris-mode')).toContainText('Автономный');
+  await page.getByRole('button',{name:'Провести эксперимент',exact:true}).click();
+  await page.getByRole('button',{name:'Да, запускаем'}).click();
+  await expect(page.getByTestId('experiment-result')).toBeVisible();
+  await page.getByRole('link',{name:'Архив',exact:false}).click();
+  await expect(page.getByTestId('archive-entry')).toHaveCount(3);
   expect(errors).toEqual([]);
   await context.setOffline(false);
 });

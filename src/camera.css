@@ -1,0 +1,25 @@
+/* Every effect is confined to the original containment camera. */
+.anomaly-camera{--camera-x:0px;--camera-y:0px;isolation:isolate;transition:background .6s}
+.camera-iris{transform:translate(var(--camera-x),var(--camera-y));transition:transform .12s ease-out}
+.anomaly-camera.active[data-stage="0"] .eye{animation:camera-breathe 7s ease-in-out infinite}
+.anomaly-camera.active[data-stage="1"] .camera-twitch{animation:camera-blink 9s infinite;transform-origin:250px 180px}
+.anomaly-camera.active[data-stage="2"] .camera-pupil{animation:camera-pupil 3s ease-in-out infinite;transform-origin:250px 180px}
+.anomaly-camera.active[data-stage="2"] .outer-ring{animation:camera-orbit 11s ease-in-out infinite;transform-origin:center}
+.anomaly-camera.active[data-stage="3"] .camera-twitch{animation:camera-nervous 3.1s steps(2,end) infinite}
+.anomaly-camera.active[data-stage="3"] .camera-telemetry{animation:camera-signal 5s steps(1,end) infinite}
+.anomaly-camera[data-stage="4"]{background:radial-gradient(ellipse,#ed807615,transparent 70%)}
+.anomaly-camera[data-stage="4"] .inner-ring,.anomaly-camera[data-stage="5"] .inner-ring{stroke:#f29a94}
+.anomaly-camera.active[data-stage="4"] .camera-twitch{animation:camera-nervous 1.3s steps(2,end) infinite}
+.anomaly-camera.active[data-stage="4"] .camera-warning{animation:camera-warning 2.2s ease-in-out infinite}
+.anomaly-camera.active[data-stage="5"] .camera-collapse{animation:camera-collapse 1.7s ease-in both;transform-origin:250px 180px}
+.anomaly-camera[data-stage="5"] .anomaly-caption{color:#f29a94}
+.anomaly-camera.camera-still *{animation:none!important;transition:none!important}
+@keyframes camera-breathe{50%{opacity:.75}}
+@keyframes camera-blink{0%,43%,47%,100%{transform:scaleY(1)}45%{transform:scaleY(.08)}}
+@keyframes camera-pupil{50%{transform:rotate(50deg) scaleX(.6)}}
+@keyframes camera-orbit{25%{transform:rotate(14deg)}75%{transform:rotate(-10deg)}}
+@keyframes camera-nervous{0%,12%,22%,100%{transform:translate(0,0)}14%{transform:translate(4px,-2px)}18%{transform:translate(-3px,2px)}}
+@keyframes camera-signal{0%,78%,100%{opacity:1}80%,83%{opacity:.4}}
+@keyframes camera-warning{50%{opacity:.35}}
+@keyframes camera-collapse{0%{transform:scale(1)}35%{transform:scale(1.12,.8)}70%{transform:scale(.9,.04)}100%{transform:scale(0,.01);opacity:0}}
+@media(prefers-reduced-motion:reduce){.anomaly-camera *{animation:none!important;transition:none!important}.camera-iris{transform:none}}

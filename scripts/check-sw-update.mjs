@@ -59,6 +59,11 @@ try {
     .getByRole("button", { name: "Запустить хаос", exact: true })
     .click();
   const before = await page.getByTestId("chaos-value").textContent();
+  await page.getByRole('link',{name:'Борис',exact:true}).click();
+  await page.getByLabel('Сообщение Борису',{exact:true}).fill('Сохрани наше знакомство при обновлении.');
+  await page.getByRole('button',{name:'Отправить сообщение'}).click();
+  await page.locator('[data-role=boris]').waitFor();
+  const savedBefore = await page.evaluate(()=>JSON.parse(localStorage.getItem('absurd-os:universe:v1')));
   version = 2;
   await page.evaluate(async () => {
     const r = await navigator.serviceWorker.getRegistration();
@@ -73,6 +78,12 @@ try {
     page.waitForEvent("load"),
     page.getByRole("button", { name: "Обновить систему" }).click(),
   ]);
+  await page.locator('[data-role=boris]').waitFor();
+  const savedAfter = await page.evaluate(()=>JSON.parse(localStorage.getItem('absurd-os:universe:v1')));
+  assert.deepEqual(savedAfter.boris,savedBefore.boris);
+  assert.deepEqual(savedAfter.history,savedBefore.history);
+  assert.deepEqual(savedAfter.v2Achievements,savedBefore.v2Achievements);
+  await page.getByRole('link',{name:'Пульт',exact:true}).click();
   await page.getByTestId("chaos-value").waitFor();
   assert.equal(await page.getByTestId("chaos-value").textContent(), before);
   assert.equal(
