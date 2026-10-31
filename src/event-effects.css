@@ -1,0 +1,101 @@
+/* Type-specific signatures, deliberately confined to the event card. */
+.effects .anim-glow .event-emoji {
+  animation: oracle-glow 1.8s ease-in-out infinite alternate;
+}
+.effects .anim-ufo .event-emoji {
+  animation: ufo-arrive 0.7s cubic-bezier(0.1, 0.8, 0.3, 1);
+}
+.effects .anim-rain .event-emoji {
+  animation: money-drop 0.65s ease-out;
+}
+.effects .anim-steam .event-emoji {
+  animation: steam-rise 2.4s ease-in-out infinite;
+}
+.effects .type-oracle {
+  background: linear-gradient(90deg, #bd9fec0c, transparent);
+}
+.effects .type-coffee {
+  background: linear-gradient(90deg, #cfa5780b, transparent);
+}
+@keyframes oracle-glow {
+  from {
+    filter: drop-shadow(0 0 2px #c193f9);
+  }
+  to {
+    filter: drop-shadow(0 0 13px #c193f9);
+    transform: scale(1.06);
+  }
+}
+@keyframes ufo-arrive {
+  0% {
+    transform: translate(100px, -35px) rotate(-25deg);
+    opacity: 0;
+  }
+  70% {
+    transform: translate(-10px, 0) rotate(12deg);
+  }
+  100% {
+    transform: translate(0, 0);
+  }
+}
+@keyframes money-drop {
+  0% {
+    transform: translateY(-35px) rotate(-35deg);
+    opacity: 0;
+  }
+  60% {
+    transform: translateY(5px) rotate(12deg);
+  }
+  100% {
+    transform: translateY(0) rotate(0);
+  }
+}
+@keyframes steam-rise {
+  50% {
+    transform: translateY(-5px);
+    filter: drop-shadow(0 -6px 9px #bf9479);
+  }
+}
+@media (max-width: 700px) {
+  .header {
+    flex-wrap: wrap;
+    padding-bottom: 0;
+  }
+  .header nav {
+    display: flex;
+    order: 3;
+    justify-content: space-around;
+    width: 100%;
+    margin: 0;
+    border-top: 1px solid var(--border);
+    gap: 10px;
+  }
+  .header nav a,
+  .header nav button {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    font-size: 11px;
+    padding: 0 10px;
+  }
+  .archive-filters button,
+  .archive-filters select {
+    min-height: 44px;
+  }
+  .archive-filters {
+    width: 100%;
+    align-items: center;
+  }
+  .icon-button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .effects .anim-glow .event-emoji,
+  .effects .anim-ufo .event-emoji,
+  .effects .anim-rain .event-emoji,
+  .effects .anim-steam .event-emoji {
+    animation: none !important;
+  }
+}
